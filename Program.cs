@@ -23,6 +23,6 @@ while (true)
         Console.WriteLine($"Inviato: {item.Title}");
     }
 
-    Console.WriteLine("Attendo 10 minuti...");
-    await Task.Delay(TimeSpan.FromMinutes(1));
+    Console.WriteLine("Attendo 1 minuto...");
+    await Task.Delay(TimeSpan.FromMinutes(10));
 }
