@@ -1,12 +1,11 @@
-# build stage
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 
-COPY . . 
-RUN dotnet restore
-RUN dotnet publish -c Release -o out
+COPY . .
 
-# runtime stage
+RUN dotnet restore Anime_NewsProva_bot.csproj
+RUN dotnet publish Anime_NewsProva_bot.csproj -c Release -o out
+
 FROM mcr.microsoft.com/dotnet/runtime:8.0
 WORKDIR /app
 
