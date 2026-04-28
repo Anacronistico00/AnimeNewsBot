@@ -1,43 +1,64 @@
 using CodeHollow.FeedReader;
-using System.Text.Json;
 
 public class NewsService
 {
-    private readonly string _filePath = "Storage/sent.json";
-    private readonly string _rssUrl = "https://www.animenewsnetwork.com/all/rss.xml";
+    private readonly SupabaseStorageService _storage;
+
+    private static readonly string[] RssFeeds =
+    [
+        "https://www.manganime.it/feed",
+        "https://www.animenewsnetwork.com/all/rss.xml"
+    ];
+
+    private const int MaxItemsPerCycle = 10;
+
+    public NewsService(SupabaseStorageService storage)
+    {
+        _storage = storage;
+    }
 
     public async Task<List<FeedItem>> GetNewItemsAsync()
     {
-        var feed = await FeedReader.ReadAsync(_rssUrl);
+        var sentLinks = await _storage.LoadSentLinksAsync();
 
-        var sentLinks = LoadSentLinks();
+        var feedTasks = RssFeeds.Select(url => FetchFeedSafeAsync(url));
+        var allFeeds = await Task.WhenAll(feedTasks);
 
-        var newItems = feed.Items
-            .Where(i => !sentLinks.Contains(i.Link))
+        var newItems = allFeeds
+            .SelectMany(items => items)
+            .Where(i => !string.IsNullOrWhiteSpace(i.Link) && !sentLinks.Contains(i.Link))
+            .Take(MaxItemsPerCycle)
             .ToList();
 
-        foreach (var item in newItems)
-        {
-            sentLinks.Add(item.Link);
-        }
-
-        SaveSentLinks(sentLinks);
+        if (newItems.Count > 0)
+            await _storage.SaveLinksAsync(newItems.Select(i => i.Link));
 
         return newItems;
     }
 
-    private HashSet<string> LoadSentLinks()
+    public async Task<List<FeedItem>> PeekLatestAsync(int count)
     {
-        if (!File.Exists(_filePath))
-            return new HashSet<string>();
+        var feedTasks = RssFeeds.Select(url => FetchFeedSafeAsync(url));
+        var allFeeds = await Task.WhenAll(feedTasks);
 
-        var json = File.ReadAllText(_filePath);
-        return JsonSerializer.Deserialize<HashSet<string>>(json) ?? new HashSet<string>();
+        return allFeeds
+            .SelectMany(items => items)
+            .Take(count)
+            .ToList();
     }
 
-    private void SaveSentLinks(HashSet<string> links)
+    private static async Task<IEnumerable<FeedItem>> FetchFeedSafeAsync(string url)
     {
-        var json = JsonSerializer.Serialize(links);
-        File.WriteAllText(_filePath, json);
+        try
+        {
+            var feed = await FeedReader.ReadAsync(url);
+            Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Feed OK: {url} ({feed.Items.Count} articoli)");
+            return feed.Items;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[WARN] Feed non raggiungibile: {url} — {ex.Message}");
+            return Enumerable.Empty<FeedItem>();
+        }
     }
 }
