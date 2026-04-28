@@ -3,6 +3,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
 using DotNetEnv;
+using Microsoft.AspNetCore.Builder;
 
 if (File.Exists(".env"))
     Env.Load();
@@ -15,8 +16,7 @@ var adminIdsRaw = Environment.GetEnvironmentVariable("ADMIN_IDS") ?? string.Empt
 var pollInterval = int.TryParse(Environment.GetEnvironmentVariable("POLL_INTERVAL_MINUTES"), out var pi) ? pi : 10;
 
 if (string.IsNullOrWhiteSpace(token)) { Console.WriteLine("[ERRORE] BOT_TOKEN mancante."); return; }
-if (string.IsNullOrWhiteSpace(chatIdRaw) ||
-    !long.TryParse(chatIdRaw, out var chatId)) { Console.WriteLine("[ERRORE] CHAT_ID mancante o non valido."); return; }
+if (string.IsNullOrWhiteSpace(chatIdRaw) || !long.TryParse(chatIdRaw, out var chatId)) { Console.WriteLine("[ERRORE] CHAT_ID mancante o non valido."); return; }
 if (string.IsNullOrWhiteSpace(supabaseUrl)) { Console.WriteLine("[ERRORE] SUPABASE_URL mancante."); return; }
 if (string.IsNullOrWhiteSpace(supabaseKey)) { Console.WriteLine("[ERRORE] SUPABASE_KEY mancante."); return; }
 if (string.IsNullOrWhiteSpace(adminIdsRaw)) { Console.WriteLine("[WARN] ADMIN_IDS non configurato."); }
@@ -30,6 +30,20 @@ var storage = new SupabaseStorageService(supabaseUrl, supabaseKey);
 var newsService = new NewsService(storage);
 var state = new BotState(pollInterval);
 var cmdHandler = new CommandHandler(bot, state, storage, newsService, adminIdsRaw);
+
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+// porta Render
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+app.Urls.Add($"http://0.0.0.0:{port}");
+
+// endpoint minimo per Render
+app.MapGet("/", () => "Bot attivo");
+
+// avvia server in background
+_ = app.RunAsync(cts.Token);
+
 
 var receiverOptions = new ReceiverOptions
 {
