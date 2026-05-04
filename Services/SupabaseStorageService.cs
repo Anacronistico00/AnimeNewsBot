@@ -33,11 +33,11 @@ public class SupabaseStorageService
         }
     }
 
-    public async Task SaveLinksAsync(IEnumerable<string> links)
+    public async Task SaveLinksAsync(IEnumerable<(string Link, int ThreadId)> items)
     {
         try
         {
-            var rows = links.Select(l => new SentLinkRow { link = l }).ToList();
+            var rows = items.Select(i => new SentLinkRow { link = i.Link, thread_id = i.ThreadId }).ToList();
             var json = JsonSerializer.Serialize(rows);
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/rest/v1/{TableName}");
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -55,7 +55,6 @@ public class SupabaseStorageService
     {
         try
         {
-            // DELETE senza filtri — cancella tutto
             var request = new HttpRequestMessage(HttpMethod.Delete, $"{_baseUrl}/rest/v1/{TableName}?link=neq.null");
             var response = await _http.SendAsync(request);
             response.EnsureSuccessStatusCode();
@@ -70,5 +69,6 @@ public class SupabaseStorageService
     private class SentLinkRow
     {
         public string link { get; set; } = string.Empty;
+        public int? thread_id { get; set; }
     }
 }

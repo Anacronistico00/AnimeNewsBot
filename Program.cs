@@ -3,7 +3,6 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
 using DotNetEnv;
-using Microsoft.AspNetCore.Builder;
 
 if (File.Exists(".env"))
     Env.Load();
@@ -16,7 +15,8 @@ var adminIdsRaw = Environment.GetEnvironmentVariable("ADMIN_IDS") ?? string.Empt
 var pollInterval = int.TryParse(Environment.GetEnvironmentVariable("POLL_INTERVAL_MINUTES"), out var pi) ? pi : 10;
 
 if (string.IsNullOrWhiteSpace(token)) { Console.WriteLine("[ERRORE] BOT_TOKEN mancante."); return; }
-if (string.IsNullOrWhiteSpace(chatIdRaw) || !long.TryParse(chatIdRaw, out var chatId)) { Console.WriteLine("[ERRORE] CHAT_ID mancante o non valido."); return; }
+if (string.IsNullOrWhiteSpace(chatIdRaw) ||
+    !long.TryParse(chatIdRaw, out var chatId)) { Console.WriteLine("[ERRORE] CHAT_ID mancante o non valido."); return; }
 if (string.IsNullOrWhiteSpace(supabaseUrl)) { Console.WriteLine("[ERRORE] SUPABASE_URL mancante."); return; }
 if (string.IsNullOrWhiteSpace(supabaseKey)) { Console.WriteLine("[ERRORE] SUPABASE_KEY mancante."); return; }
 if (string.IsNullOrWhiteSpace(adminIdsRaw)) { Console.WriteLine("[WARN] ADMIN_IDS non configurato."); }
@@ -30,20 +30,6 @@ var storage = new SupabaseStorageService(supabaseUrl, supabaseKey);
 var newsService = new NewsService(storage);
 var state = new BotState(pollInterval);
 var cmdHandler = new CommandHandler(bot, state, storage, newsService, adminIdsRaw);
-
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
-
-// porta Render
-var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
-app.Urls.Add($"http://0.0.0.0:{port}");
-
-// endpoint minimo per Render
-app.MapGet("/", () => "Bot attivo");
-
-// avvia server in background
-_ = app.RunAsync(cts.Token);
-
 
 var receiverOptions = new ReceiverOptions
 {
@@ -79,27 +65,41 @@ while (!cts.Token.IsCancellationRequested)
             var news = await newsService.GetNewItemsAsync();
 
             if (news.Count == 0)
-            {
                 Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Nessuna nuova notizia.");
-            }
 
-            foreach (var item in news)
+            foreach (var categorized in news)
             {
                 if (cts.Token.IsCancellationRequested) break;
 
                 try
                 {
-                    // Formato HTML: niente problemi di escape
-                    var message = $"📰 <b>{HtmlEncode(item.Title)}</b>\n<a href=\"{item.Link}\">Leggi articolo</a>";
-                    await bot.SendMessage(chatId, message, parseMode: ParseMode.Html);
-                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] Inviato: {item.Title}");
+                    var topicLabel = categorized.ThreadId switch
+                    {
+                        2 => "Anime",
+                        3 => "Manga",
+                        4 => "Videogame",
+                        157 => "News & Curiosità",
+                        var t => $"Thread {t}"  // fallback per eventuali futuri topic
+                    };
+
+                    var message = $"📰 <b>{HtmlEncode(categorized.Item.Title)}</b>\n" +
+                                  $"<a href=\"{categorized.Item.Link}\">Leggi articolo</a>";
+
+                    await bot.SendMessage(
+                        chatId: chatId,
+                        text: message,
+                        parseMode: ParseMode.Html,
+                        messageThreadId: categorized.ThreadId  // null = General, nessun thread
+                    );
+
+                    Console.WriteLine($"[{DateTime.UtcNow:HH:mm:ss}] [{topicLabel}] Inviato: {categorized.Item.Title}");
                     state.IncrementSent(1);
 
                     await Task.Delay(500, cts.Token);
                 }
                 catch (ApiRequestException ex)
                 {
-                    Console.WriteLine($"[WARN] Errore Telegram per '{item.Title}': {ex.Message}");
+                    Console.WriteLine($"[WARN] Errore Telegram per '{categorized.Item.Title}': {ex.Message}");
                 }
                 catch (OperationCanceledException) { break; }
                 catch (Exception ex)
